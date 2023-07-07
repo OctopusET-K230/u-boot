@@ -298,6 +298,10 @@ static int spi_nor_read_reg(struct spi_nor *nor, u8 code, u8 *val, int len)
 					  SPI_MEM_OP_NO_ADDR,
 					  SPI_MEM_OP_NO_DUMMY,
 					  SPI_MEM_OP_DATA_IN(len, NULL, 0));
+	if (nor->reg_proto == SNOR_PROTO_8_8_8_DTR) {
+		op.dummy.nbytes = 8;
+	}
+	
 	int ret;
 
 	spi_nor_setup_op(nor, &op, nor->reg_proto);
@@ -736,7 +740,6 @@ static int spi_nor_fsr_ready(struct spi_nor *nor)
 
 	if (fsr < 0)
 		return fsr;
-
 	if (fsr & (FSR_E_ERR | FSR_P_ERR)) {
 		if (fsr & FSR_E_ERR)
 			dev_err(nor->dev, "Erase operation failed.\n");
@@ -2722,7 +2725,7 @@ static int spi_nor_init_params(struct spi_nor *nor,
 	if (info->flags & SPI_NOR_OCTAL_DTR_READ) {
 		params->hwcaps.mask |= SNOR_HWCAPS_READ_8_8_8_DTR;
 		spi_nor_set_read_settings(&params->reads[SNOR_CMD_READ_8_8_8_DTR],
-					  0, 20, SPINOR_OP_READ_FAST,
+					  0, 16, SPINOR_OP_READ_FAST,
 					  SNOR_PROTO_8_8_8_DTR);
 	}
 
@@ -3026,6 +3029,7 @@ spi_nor_adjust_hwcaps(struct spi_nor *nor,
 	 * Keep only the hardware capabilities supported by both the SPI
 	 * controller and the SPI flash memory.
 	 */
+	
 	*hwcaps = spi_hwcaps & params->hwcaps.mask;
 	if (*hwcaps & ignored_mask) {
 		dev_dbg(nor->dev,
@@ -3076,7 +3080,7 @@ static int spi_nor_select_pp(struct spi_nor *nor,
 
 	if (best_match < 0)
 		return -EINVAL;
-
+	
 	cmd = spi_nor_hwcaps_pp2cmd(BIT(best_match));
 	if (cmd < 0)
 		return -EINVAL;
@@ -3575,6 +3579,64 @@ static struct spi_nor_fixups mt35xu512aba_fixups = {
 };
 #endif /* CONFIG_SPI_FLASH_MT35XU */
 
+static int spi_nor_gd25lx_octal_dtr_enable(struct spi_nor *nor)
+{
+	struct spi_mem_op op;
+	u8 buf;
+	u8 addr_width = 3;
+	int ret;
+
+	nor->read_dummy = 16;
+
+	ret = write_enable(nor);
+	if (ret)
+		return ret;
+
+	buf = OPI_DTR_WITH_DQS;
+	op = (struct spi_mem_op)
+		SPI_MEM_OP(SPI_MEM_OP_CMD(GD_OP_MT_WR_ANY_REG, 1),
+			   SPI_MEM_OP_ADDR(addr_width, GD_REG_CFR0V, 1),
+			   SPI_MEM_OP_NO_DUMMY,
+			   SPI_MEM_OP_DATA_OUT(1, &buf, 1));
+	ret = spi_mem_exec_op(nor->spi, &op);
+	if (ret) {
+		dev_err(nor->dev, "Failed to enable octal DTR mode\n");
+		return ret;
+	}
+
+	nor->reg_proto = SNOR_PROTO_8_8_8_DTR;
+
+	nor->flags |= SNOR_F_SOFT_RESET;
+	return 0;
+}
+
+static void gd25lx_default_init(struct spi_nor *nor)
+{
+	nor->octal_dtr_enable = spi_nor_gd25lx_octal_dtr_enable;
+}
+
+static void gd25lx_post_sfdp_fixup(struct spi_nor *nor,
+					 struct spi_nor_flash_parameter *params)
+{
+	params->hwcaps.mask |= SNOR_HWCAPS_PP_8_8_8_DTR;
+
+	nor->cmd_ext_type = SPI_NOR_EXT_REPEAT;
+	params->rdsr_dummy = 8;
+	params->rdsr_addr_nbytes = 0;
+
+	/*
+	 * The BFPT quad enable field is set to a reserved value so the quad
+	 * enable function is ignored by spi_nor_parse_bfpt(). Make sure we
+	 * disable it.
+	 */
+	params->quad_enable = NULL;
+}
+
+static struct spi_nor_fixups gd25lx_fixups = {
+	.default_init = gd25lx_default_init,
+	.post_sfdp = gd25lx_post_sfdp_fixup,
+};
+
 #if CONFIG_IS_ENABLED(SPI_FLASH_MACRONIX)
 /**
  * spi_nor_macronix_octal_dtr_enable() - Enable octal DTR on Macronix flashes.
@@ -3669,8 +3731,8 @@ static int spi_nor_octal_dtr_enable(struct spi_nor *nor)
 	      nor->write_proto == SNOR_PROTO_8_8_8_DTR))
 		return 0;
 
-	if (!(nor->flags & SNOR_F_IO_MODE_EN_VOLATILE))
-		return 0;
+	// if (!(nor->flags & SNOR_F_IO_MODE_EN_VOLATILE))
+	// 	return 0;
 
 	ret = nor->octal_dtr_enable(nor);
 	if (ret)
@@ -3835,6 +3897,11 @@ void spi_nor_set_fixups(struct spi_nor *nor)
 #if CONFIG_IS_ENABLED(SPI_FLASH_MACRONIX)
 	nor->fixups = &macronix_octal_fixups;
 #endif /* SPI_FLASH_MACRONIX */
+
+#ifdef CONFIG_IS_ENABLED(SPI_FLASH_GIGADEVICE)
+	if (!strcmp(nor->info->name, "gd25lx256e"))
+		nor->fixups = &gd25lx_fixups;
+#endif
 }
 
 int spi_nor_scan(struct spi_nor *nor)
@@ -3980,7 +4047,7 @@ int spi_nor_scan(struct spi_nor *nor)
 	} else {
 		nor->addr_width = 3;
 	}
-
+	
 	if (nor->addr_width == 3 && mtd->size > SZ_16M) {
 #ifndef CONFIG_SPI_FLASH_BAR
 		/* enable 4-byte addressing if the device exceeds 16MiB */
