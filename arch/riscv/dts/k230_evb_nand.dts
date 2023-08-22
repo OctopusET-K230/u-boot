@@ -174,8 +174,8 @@
 
 &spi0 {
 	spi-flash@0 {
-		//compatible = "spi-nand";
-		compatible = "jedec,spi-nor";
+		compatible = "spi-nand";
+		//compatible = "jedec,spi-nor";
 		reg = <0>;
 		spi-max-frequency = <100000000>;
 		spi-tx-bus-width = <8>;
