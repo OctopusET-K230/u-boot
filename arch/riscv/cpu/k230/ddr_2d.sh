@@ -1,13 +1,5 @@
 #!/bin/bash
 cat > ddr.awk  <<'EOF'
-#  data.c--数据段 c代码数组     	inst.c----指令c代码
-#  dmem.bin---数据段二进制文件； 	imem.bin---指令二进制
-#  files.c---提取文件和值 对比文件；
-
-#使用说明，需要手动修改下指令和数据 部分代码的 行号；
-#FNR >= 477 && FNR < 16860   需要修改  //477  -- 16860 reg_write(   DDR_REG_BASE +0x53fff*4+0x02000000,0x0);
-#FNR > 16883 && FNR < 17774    需要修改 //16866  --- 
-
 BEGIN { print "wwwwwwwwwinstr---instruction--" > "files.c";}
 
 
@@ -69,6 +61,12 @@ iel_f=$4
 dsl_f=$5
 del_f=$6
 
+isl_f_2d=$3
+iel_f_2d=$4
+dsl_f_2d=$5
+del_f_2d=$7
+
+
 #指令
 #reg_write(   DDR_REG_BASE +0x50000*4+0x02000000,0xb0); //isl
 #reg_write(   DDR_REG_BASE +0x53fff*4+0x02000000,0x0); //iel
@@ -82,11 +80,29 @@ iel=$(grep $iel_f $f  -n | head -1 | cut  -d:  -f1);
 dsl=$(grep $dsl_f $f  -n | head -1 | cut  -d:  -f1);
 del=$(grep $del_f $f  -n | head -1 | cut  -d:  -f1);
 
+isl_2d=$(grep $isl_f_2d $f  -n | tail -1 | cut  -d:  -f1);
+iel_2d=$(grep $iel_f_2d $f  -n | tail -1 | cut  -d:  -f1);
+dsl_2d=$(grep $dsl_f_2d $f  -n | tail -1 | cut  -d:  -f1);
+del_2d=$(grep $del_f_2d $f  -n | tail -1 | cut  -d:  -f1);
+
+
+
 #转成imem.bin dmem.bin
+set -e ; gawk -v isl=${isl_2d}  -v iel=${iel_2d} -v dsl=${dsl_2d}  -v del=${del_2d} -f ddr.awk  $f; 
+cp inst.c  inst_2d.c  
+cp data.c data_2d.c
+cp files.c files_2d.c
+cp imem.bin imem_2d.bin
+cp dmem.bin dmem_2d.bin
 set -e ; gawk -v isl=${isl}  -v iel=${iel} -v dsl=${dsl}  -v del=${del} -f ddr.awk  $f;
 cp $f $df;
 
 #替换成for循环函数；
+sed -i -e "${dsl_2d},${del_2d}d"  $df
+sed -i -e "${dsl_2d}a ddr_wite_bin(DDR_REG_BASE+0x54000*4+0x02000000,gDdrD_2d,ARRAY_SIZE(gDdrD_2d));"  $df   ##data
+sed -i -e "${isl_2d},${iel_2d}d"  $df
+sed -i -e "${isl_2d}a ddr_wite_bin(DDR_REG_BASE+0x50000*4+0x02000000,gDdrI_2d,ARRAY_SIZE(gDdrI_2d));"  $df  ##instruction
+
 sed -i -e "${dsl},${del}d"  $df
 sed -i -e "${dsl}a ddr_wite_bin(DDR_REG_BASE+0x54000*4+0x02000000,gDdrD,ARRAY_SIZE(gDdrD));"  $df   ##data
 sed -i -e "${isl},${iel}d"  $df
@@ -104,6 +120,12 @@ static const unsigned short gDdrI[]={
 static const unsigned short gDdrD[]={
 	0xdddddddd,
 };
+static const unsigned short gDdrI_2d[]={
+	0x12121212,
+};
+static const unsigned short gDdrD_2d[]={
+	0xd2d2d2d2,
+};
 int  ddr_wite_bin(ulong regs,const unsigned short *bin,ulong blen)
 {
 	int i = 0;
@@ -120,6 +142,17 @@ int  ddr_wite_bin(ulong regs,const unsigned short *bin,ulong blen)
 EOF
 
 #指令数组
+tl=$(grep 0x12121212 temp.c  -n | cut  -d:  -f1);
+sed -i  -e "$tl d"   temp.c
+sed -i  -e "$(($tl-1)) r  inst_2d.c"  temp.c
+#数据数组
+tl=$(grep 0xd2d2d2d2 temp.c  -n | cut  -d:  -f1);
+sed -i  -e "$tl d"   temp.c
+sed -i  -e "$(($tl-1)) r  data_2d.c"  temp.c
+
+
+
+#指令数组
 tl=$(grep 0x11111111 temp.c  -n | cut  -d:  -f1);
 sed -i  -e "$tl d"   temp.c
 sed -i  -e "$(($tl-1)) r  inst.c"  temp.c
@@ -127,6 +160,9 @@ sed -i  -e "$(($tl-1)) r  inst.c"  temp.c
 tl=$(grep 0xdddddddd temp.c  -n | cut  -d:  -f1);
 sed -i  -e "$tl d"   temp.c
 sed -i  -e "$(($tl-1)) r  data.c"  temp.c
+
+
+
 #更新代码及头文件；
 sed -i -e "/0x98000000/ r temp.c"  $df 
 
@@ -136,5 +172,5 @@ rm -rf  dmem.c  imem.c  inst.c data.c   temp.c  data  inst
 #imem.bin--指令bin文件；
 #dmem.bin--数据bin文件；
 #files.c--- 查看提前的关键值；
-rm -rf imem.bin  dmem.bin files.c  ddr.awk
+rm -rf imem.bin  dmem.bin files.c  ddr.awk inst_2d.c  data_2d.c files_2d.c  imem_2d.bin dmem_2d.bin
 
