@@ -1,4 +1,4 @@
-if TARGET_K230_EVB
+if TARGET_K230_SIPLP4
 
 config SYS_CPU
 	default "k230"
@@ -7,7 +7,7 @@ config SYS_VENDOR
     default "canaan"
 
 config SYS_BOARD
-    default "k230_evb"
+    default "k230_siplp4"
 
 config SYS_CONFIG_NAME
     default "k230_evb"
@@ -16,18 +16,16 @@ config SYS_CONFIG_NAME
 config BOARD_SPECIFIC_OPTIONS # dummy
 	def_bool y
 	select RISCV_THEAD
-    
+
 choice
 	prompt "ddr typy freq"
-	depends on TARGET_K230_EVB 
-	default LPDDR3_800
-	
-config LPDDR3_800
-	bool "ddr3 800"
+	default SIPLP4_3200_WALLODT
 
-config LPDDR3_2133
-	bool  "ddr3 2133"
-
-endchoice
+    config SIPLP4_3200_WODT
+        bool  "sip ddr4 3200 with write odt"
+        
+    config SIPLP4_3200_WALLODT
+        bool  "sip ddr4 3200 with all odt"  
+endchoice 
 
 endif

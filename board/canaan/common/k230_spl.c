@@ -44,8 +44,9 @@
 #include <pufs_sp38d.h>
 #include <linux/kernel.h>
 #include <init.h>
-#include "k230_board.h"
+#include "k230_board_common.h"
 #include "mmc.h"
+#include "sdk_autoconf.h"
 //spl 相关代码
 int quick_boot(void);
 
@@ -131,6 +132,8 @@ int spl_board_init_f(void)
     memset(__bss_start, 0, (ulong)&__bss_end - (ulong)__bss_start);
     //record_boot_time_info_to_sram("be");
 
+   
+
     // /* load/boot image from boot device */
     //if(quick_boot() == 1){//默认非快起；
     if(quick_boot()){//默认快起
@@ -145,8 +148,12 @@ int spl_board_init_f(void)
         //record_boot_time_info("ls");
         ret += k230_img_load_boot_sys(BOOT_SYS_AUTO);
     }
-    //printf("normal boot\n");
-    board_init_r(NULL, 0);
+    
+    ret = k230_img_load_boot_sys(BOOT_SYS_UBOOT);
+    if(ret )
+        printf("uboot boot failed\n");
+    //while(1);
+    //board_init_r(NULL, 0);
     return ret;
 }
 
@@ -154,6 +161,10 @@ int spl_board_init_f(void)
 int quick_boot(void)
 {
     int ret = 1 ;
+    #if defined(CONFIG_LINUX_RUN_CORE_ID) && (CONFIG_LINUX_RUN_CORE_ID == 1)
+    return 0; //非快起，uboot运行在大核core1;
+    #endif 
+
     if((g_bootmod == SYSCTL_BOOT_SDIO0) || (g_bootmod == SYSCTL_BOOT_SDIO1)){
         if(mmc_init_device(mmc_get_env_dev()))
             return 0;//正常boot；

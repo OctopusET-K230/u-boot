@@ -42,7 +42,7 @@
 #include <pufs_sp38a.h>
 #include <pufs_sp38d.h>
 #include <linux/kernel.h>
-#include "k230_board.h"
+#include "k230_board_common.h"
 
 #define TIME_TO_MS(a) ((a)/(27*1000))
 #define CYCLE_TO_MS(a) ((a)/(800*1000))

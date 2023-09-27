@@ -23,37 +23,26 @@
 #  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #  */
 
-obj-$(CONFIG_LPDDR4_1066) += lpddr4_init_32_swap_1066.o
-obj-$(CONFIG_LPDDR4_3200) += lpddr4_init_32_swap_3200.o
-obj-$(CONFIG_LPDDR4_2667) += lpddr4_2667.o
 
 
 
-##ddr size
-$(obj)/lpddr4_2667.c: $(src)/lpddr4_init_32_swap_2667.c   
-	(cp $(srctree)/arch/riscv/cpu/k230/ddr4/lpddr4_init_32_swap_2667.c  $@)
-ifeq ($(CONFIG_DDR_SIZE),0x80000000) 
-	sed -i  -E -e 's/(^[^/]*0x00000218[ ]*,)([^)]*)(.*)/\1 0x07070707 \3 \/\/have modify /'  $@ ; 
-else ifeq ($(CONFIG_DDR_SIZE),0x20000000)  
-	sed -i  -E -e 's/(^[^/]*0x00000218[ ]*,)([^)]*)(.*)/\1 0x0f0f0707 \3/ \/\/have modify'  $@ ; 
+ifdef CONFIG_SPL_BUILD
+obj-y += k230_spl.o
 endif 
-#sed -n -E -e 's/(^[^/]*0x00000218[ ]*,)([^)]*)(.*)/\1 0x07070707 \3/p'  $@ 
-#sed -n -E -e 's/(^[^/]*0x00000218[ ]*,)([^)]*)(.*)/\1 0x0f0f0707 \3/p'  $@ 
-#0x0f0f0f07  256MB;
-#0x0f0f0707 512MB
-#0x07070707 2GB
+obj-y += k230_board_common.o
+obj-y +=  k230_img.o
+obj-y +=  k230_perf.o
 
-
-
-obj-$(CONFIG_SIPLP4_3200_WODT) += siplp4_3200_hwodt.o
-obj-$(CONFIG_SIPLP4_3200_WALLODT) += siplp4_3200_allodt.o
-
-#arch/riscv/cpu/k230/ddr4/sip_lpddr4_init_32_swap_3200_with_wodt.c
-$(obj)/siplp4_3200_hwodt.c: $(src)/sip_lpddr4_init_32_swap_3200_with_wodt.c   
-	($(srctree)/arch/riscv/cpu/k230/ddr_2d.sh $< $@ 0x50000 0x53fff 0x54000 0x5433d  0x542bd || exit 1)
-
-$(obj)/siplp4_3200_allodt.c: $(src)/sip_lpddr4_init_32_swap_3200_with_allodt.c
-	($(srctree)/arch/riscv/cpu/k230/ddr_2d.sh $< $@ 0x50000 0x53fff 0x54000 0x5433d  0x542bd || exit 1)
-
-
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_common  
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_crypto
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_dma
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_ka
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_rt
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_ecc
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_hmac
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_ecp
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_sm2
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_sp38a
+EXTRA_CFLAGS += -I$(srctree)/arch/$(ARCH)/cpu/k230/puf_fw/pufs_sp38d
 
