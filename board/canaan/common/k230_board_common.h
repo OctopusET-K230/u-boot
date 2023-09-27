@@ -44,6 +44,7 @@ unsigned long get_CONFIG_PLAIN_ADDR(void);
 
 typedef enum {
     NONE_SECURITY = 0,
+    GCM_ONLY,
     CHINESE_SECURITY,
     INTERNATIONAL_SECURITY
 } crypto_type_e;
