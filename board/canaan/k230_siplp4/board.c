@@ -22,33 +22,3 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/dts-v1/;
-#include "k230_evb.dtsi"
-
-/ {
-	model = "kendryte k230 evb doorlock ov9286";
-	compatible = "kendryte,k230_evb_doorlock_ov9286";
-
-	memory@0 {
-		device_type = "memory";
-		reg = <
-				0x0 0x8000000 0x0 0x7fff000  /*MEM_LINUX_SYS*/
-				0x0 0x200000 0x0 0x7dff000  /*MEM_RTT_SYS*/
-			  >;
-	};
-};
-
-&iomux {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pins &ov9628_pins>;
-
-//	Please pay attention to the bank voltage! will damage the chip.
-	ov9628_pins: ov9628_pins {
-		u-boot,dm-pre-reloc;
-		pinctrl-single,pins = <
-		(IO10) ( 0<<SEL | 0<<SL | BANK_VOLTAGE_IO2_IO13 <<MSC | 1<<IE | 0<<OE | 0<<PU | 0<<PD | 8<<DS | 0<<ST )
-		(IO11) ( 0<<SEL | 0<<SL | BANK_VOLTAGE_IO2_IO13 <<MSC | 0<<IE | 1<<OE | 0<<PU | 0<<PD | 8<<DS | 0<<ST )
-		(IO12) ( 0<<SEL | 0<<SL | BANK_VOLTAGE_IO2_IO13 <<MSC | 0<<IE | 1<<OE | 0<<PU | 0<<PD | 8<<DS | 0<<ST )
-		>;
-	};
-};
