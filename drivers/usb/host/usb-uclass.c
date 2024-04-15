@@ -5,8 +5,6 @@
  *
  * usb_match_device() modified from Linux kernel v4.0.
  */
-#pragma GCC push_options
-#pragma GCC optimize ("O0")
 #define LOG_CATEGORY UCLASS_USB
 
 #include <common.h>
