@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <asm/io.h>
 //#include <k230.h>
-//#include <core_rv64.h>
+#include <linux/delay.h>
 #define               DDR_REG_BASE 0x98000000
 
 #define reg_write( addr,v)                       \
@@ -39,280 +39,388 @@
        v =readl ((const volatile void __iomem *) addr );  \
     }
 
-void ddr_init_board()
+#define BOOT_REG_BASE   (0x91102000)
+#define  PLL0_CFG0                           (BOOT_REG_BASE + 0x0  )
+#define  PLL0_CFG1                           (BOOT_REG_BASE + 0x4  )
+#define  PLL0_CTL                            (BOOT_REG_BASE + 0x8  )
+#define  PLL0_STAT                           (BOOT_REG_BASE + 0xC  )
+#define  PLL1_CFG0                           (BOOT_REG_BASE + 0x10 )
+#define  PLL1_CFG1                           (BOOT_REG_BASE + 0x14 )
+#define  PLL1_CTL                            (BOOT_REG_BASE + 0x18 )
+#define  PLL1_STAT                           (BOOT_REG_BASE + 0x1C )
+#define  PLL2_CFG0                           (BOOT_REG_BASE + 0x20 )
+#define  PLL2_CFG1                           (BOOT_REG_BASE + 0x24 )
+#define  PLL2_CTL                            (BOOT_REG_BASE + 0x28 )
+#define  PLL2_STAT                           (BOOT_REG_BASE + 0x2C )
+#define  PLL3_CFG0                           (BOOT_REG_BASE + 0x30 )
+#define  PLL3_CFG1                           (BOOT_REG_BASE + 0x34 )
+#define  PLL3_CTL                            (BOOT_REG_BASE + 0x38 )
+#define  PLL3_STAT                           (BOOT_REG_BASE + 0x3C )
+
+static void pd_pll(uint32_t pll_ctl,uint32_t pll_stat)
+{
+int rdata;
+   writel(0x10001,pll_ctl);
+   rdata=readl(pll_stat);
+   while( (rdata&0x30) != 0x0){
+        rdata=readl(pll_stat);
+   }
+}
+static void init_pll(uint32_t pll_ctl,uint32_t pll_stat)
+{
+   int rdata;
+   writel(0x20002,pll_ctl);
+   rdata=readl(pll_stat);
+   while( (rdata & 0x30) != 0x20){
+        rdata=readl(pll_stat);
+   }
+}
+
+static uint32_t cfg_pll(int fb_div,int ref_div,int out_div,int pllx_cfg0,int pllx_cfg1,int pllx_ctl,int pllx_stat)
+{
+  int pll_sta;
+  int wdata,rdata;
+  pd_pll(pllx_ctl,pllx_stat);
+  //writel(( (fb_div/2) | 0x20000),pllx_cfg1 );
+  writel(( (fb_div/4) | 0x20000),pllx_cfg1 ); //for minimum long term jitter
+  writel(( (fb_div & 0x1fff) | ( (ref_div & 0x3f) << 16 ) | ( (out_div & 0xf) << 24) ),pllx_cfg0 );
+  init_pll(pllx_ctl,pllx_stat);
+
+}
+static int change_pll_1866(void)
+{
+    /* enable cache */
+    //Note: The recommended value for BWADJ is FBK_DIV/2.Valid values range from 0 to 0xFFF.
+    //To minimize long-term jitter, using NB=NF/4 is better. NB = BWADJ[11:0] + 1,
+    //So, BWADJ=(NB-1)=[NF/2 -1] or (NF/4 -1)--minimize long term jitter
+
+    cfg_pll(     // 1860Mhz
+        154,  //fb_div=NF-1
+        0,    //ref_div=NR-1
+        1,    //out_div=OD-1
+        PLL2_CFG0,
+        PLL2_CFG1,
+        PLL2_CTL,
+        PLL2_STAT
+        );
+    *(uint32_t*)(0x91100060) =  0x800043fe;//switch ddrc_core_clk source to pll2div4
+    //__ASM volatile("wfi");
+    udelay(50);
+
+
+}
+
+void ddr_init_board(void)
 {
 int data;
 int train_data=0;
 
-  printf("ddr 800 with odt date %s\n", __func__);
-  reg_read (0x91100060,data);
-  data =data & 0xfffffffc;
-  data =data | 0xc00;
-  data =data | 0x80000000;
-  reg_write(0x91100060,data);
+  //reg_read (0x91100060,data);
+  //data =data & 0xfffffffe;
+  //data =data | 0x400;
+  //data =data | 0x80000000;
+  //reg_write(0x91100060,data);
+
+printf("ddr 1866\n");
+change_pll_1866();
+reg_write( DDR_REG_BASE + 0x00000304 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00000030 , 0x00000001  );
+reg_read ( DDR_REG_BASE + 0x00000004 ,  data );
+reg_write( DDR_REG_BASE + 0x00000000 , 0x01040008  );
+reg_write( DDR_REG_BASE + 0x00000010 , 0x0000e030  );
+reg_write( DDR_REG_BASE + 0x00000014 , 0x00007563  );
+reg_write( DDR_REG_BASE + 0x00000020 , 0x00001100  );
+reg_write( DDR_REG_BASE + 0x00000024 , 0xb4b04b13  );
+reg_write( DDR_REG_BASE + 0x00000028 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x0000002c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020  );
+reg_write( DDR_REG_BASE + 0x00000034 , 0x00405f04  );
+reg_write( DDR_REG_BASE + 0x00000038 , 0x00a80002  );
+reg_write( DDR_REG_BASE + 0x0000003c , 0x00010050  );
+reg_write( DDR_REG_BASE + 0x00000050 , 0x90210000  );
+reg_write( DDR_REG_BASE + 0x00000054 , 0x0034002e  );
+reg_write( DDR_REG_BASE + 0x00000060 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00000064 , 0x0038003d  );
+reg_write( DDR_REG_BASE + 0x00000068 , 0x005b0000  );
+reg_write( DDR_REG_BASE + 0x000000c0 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000000d0 , 0xc0020002  );
+reg_write( DDR_REG_BASE + 0x000000d4 , 0x00010002  );
+reg_write( DDR_REG_BASE + 0x000000d8 , 0x00001000  );
+reg_write( DDR_REG_BASE + 0x000000dc , 0x0083001c  );
+reg_write( DDR_REG_BASE + 0x000000e0 , 0x00020000  );
+reg_write( DDR_REG_BASE + 0x000000e4 , 0x00100006  );
+reg_write( DDR_REG_BASE + 0x000000e8 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000000ec , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000000f0 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000000f4 , 0x0000023f  );
+reg_write( DDR_REG_BASE + 0x000000f8 , 0x00000002  );
+reg_write( DDR_REG_BASE + 0x00000100 , 0x0d181f14  );
+reg_write( DDR_REG_BASE + 0x00000104 , 0x0004031e  );
+reg_write( DDR_REG_BASE + 0x00000108 , 0x0407090a  );
+reg_write( DDR_REG_BASE + 0x0000010c , 0x00507006  );
+reg_write( DDR_REG_BASE + 0x00000110 , 0x09020509  );
+reg_write( DDR_REG_BASE + 0x00000114 , 0x01010707  );
+reg_write( DDR_REG_BASE + 0x00000118 , 0x01010005  );
+reg_write( DDR_REG_BASE + 0x0000011c , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00000120 , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00000130 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000134 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000138 , 0x00000041  );
+reg_write( DDR_REG_BASE + 0x0000013c , 0x80000000  );
+reg_write( DDR_REG_BASE + 0x00000144 , 0x00000094  );
+reg_write( DDR_REG_BASE + 0x00000180 , 0xe0a8002a  );
+reg_write( DDR_REG_BASE + 0x00000184 , 0x0180c892  );
+reg_write( DDR_REG_BASE + 0x00000188 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000190 , 0x03898204  );
+reg_write( DDR_REG_BASE + 0x00000194 , 0x00070202  );
+reg_write( DDR_REG_BASE + 0x00000198 , 0x07a09110  );
+reg_write( DDR_REG_BASE + 0x000001a0 , 0xa0400018  );
+reg_write( DDR_REG_BASE + 0x000001a4 , 0x00760085  );
+reg_write( DDR_REG_BASE + 0x000001a8 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x000001b4 , 0x00000904  );
+reg_write( DDR_REG_BASE + 0x000001c0 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x000001c4 , 0x85000000  );
+#if 1
+// 1GB OK
+reg_write( DDR_REG_BASE + 0x00000200 , 0x0000001f  );//
+reg_write( DDR_REG_BASE + 0x00000204 , 0x00080808  );//
+reg_write( DDR_REG_BASE + 0x00000208 , 0x00000000  );//
+reg_write( DDR_REG_BASE + 0x0000020c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000210 , 0x00001f1f  );
+reg_write( DDR_REG_BASE + 0x00000214 , 0x070f0707  );
+reg_write( DDR_REG_BASE + 0x00000218 , 0x0f070707  );
+reg_write( DDR_REG_BASE + 0x0000021c , 0x00000f0f  );
+reg_write( DDR_REG_BASE + 0x00000224 , 0x07070707  );
+reg_write( DDR_REG_BASE + 0x00000228 , 0x07070707  );
+reg_write( DDR_REG_BASE + 0x0000022c , 0x00000007  );
+#endif
+#if 0
+// 512MB work ok
+reg_write( DDR_REG_BASE + 0x00000200 , 0x0000001f  );
+reg_write( DDR_REG_BASE + 0x00000204 , 0x00080808  );
+reg_write( DDR_REG_BASE + 0x00000208 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x0000020c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000210 , 0x00001f1f  );
+reg_write( DDR_REG_BASE + 0x00000214 , 0x070f0707  );
+reg_write( DDR_REG_BASE + 0x00000218 , 0x0f0f0707  );
+reg_write( DDR_REG_BASE + 0x0000021c , 0x00000f0f  );
+reg_write( DDR_REG_BASE + 0x00000224 , 0x07070707  );
+reg_write( DDR_REG_BASE + 0x00000228 , 0x07070707  );
+reg_write( DDR_REG_BASE + 0x0000022c , 0x00000007  );
+#endif
+#if 0
+// 2GB only one cs ,1GB work ok
+reg_write( DDR_REG_BASE + 0x00000200 , 0x0000001f  );//
+reg_write( DDR_REG_BASE + 0x00000204 , 0x00090909  );//
+reg_write( DDR_REG_BASE + 0x00000208 , 0x00000000  );//
+reg_write( DDR_REG_BASE + 0x0000020c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000210 , 0x00001f00  );
+reg_write( DDR_REG_BASE + 0x00000214 , 0x080f0808  );
+reg_write( DDR_REG_BASE + 0x00000218 , 0x0f080808  );
+reg_write( DDR_REG_BASE + 0x0000021c , 0x00000f0f  );
+reg_write( DDR_REG_BASE + 0x00000224 , 0x08080808  );
+reg_write( DDR_REG_BASE + 0x00000228 , 0x08080808  );
+reg_write( DDR_REG_BASE + 0x0000022c , 0x00000008  );
+#endif
+
+reg_write( DDR_REG_BASE + 0x00000240 , 0x06040a28  );
+reg_write( DDR_REG_BASE + 0x00000244 , 0x00002301  );
+reg_write( DDR_REG_BASE + 0x00000250 , 0x80c31f18  );
+reg_write( DDR_REG_BASE + 0x00000254 , 0x00002000  );
+reg_write( DDR_REG_BASE + 0x0000025c , 0x0f000001  );
+reg_write( DDR_REG_BASE + 0x00000264 , 0x0f00007f  );
+reg_write( DDR_REG_BASE + 0x0000026c , 0x0f00007f  );
+reg_write( DDR_REG_BASE + 0x00000270 , 0x04040208  );
+reg_write( DDR_REG_BASE + 0x00000274 , 0x08400810  );
+reg_write( DDR_REG_BASE + 0x00000300 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000304 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x0000030c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000320 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00000328 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x0000036c , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000490 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00000540 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x000005f0 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x000006a0 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00000750 , 0x00000001  );
+reg_write( DDR_REG_BASE + 0x00002020 , 0x00001100  );
+reg_write( DDR_REG_BASE + 0x00002024 , 0xb4b04b13  );
+reg_write( DDR_REG_BASE + 0x00002034 , 0x00405f04  );
+reg_write( DDR_REG_BASE + 0x00002050 , 0x30210000  );
+reg_write( DDR_REG_BASE + 0x00002064 , 0x0038003d  );
+reg_write( DDR_REG_BASE + 0x00002068 , 0x005b0000  );
+reg_write( DDR_REG_BASE + 0x000020dc , 0x0083001c  );
+reg_write( DDR_REG_BASE + 0x000020e0 , 0x00020000  );
+reg_write( DDR_REG_BASE + 0x000020e8 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000020ec , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000020f4 , 0x0000023f  );
+reg_write( DDR_REG_BASE + 0x000020f8 , 0x00000002  );
+reg_write( DDR_REG_BASE + 0x00002100 , 0x0d181f14  );
+reg_write( DDR_REG_BASE + 0x00002104 , 0x0004031e  );
+reg_write( DDR_REG_BASE + 0x00002108 , 0x0407090a  );
+reg_write( DDR_REG_BASE + 0x0000210c , 0x00507006  );
+reg_write( DDR_REG_BASE + 0x00002110 , 0x09020509  );
+reg_write( DDR_REG_BASE + 0x00002114 , 0x01010707  );
+reg_write( DDR_REG_BASE + 0x00002118 , 0x01010005  );
+reg_write( DDR_REG_BASE + 0x0000211c , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00002120 , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00002130 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00002134 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00002138 , 0x00000041  );
+reg_write( DDR_REG_BASE + 0x0000213c , 0x80000000  );
+reg_write( DDR_REG_BASE + 0x00002144 , 0x00000094  );
+reg_write( DDR_REG_BASE + 0x00002180 , 0xe0a8002a  );
+reg_write( DDR_REG_BASE + 0x00002190 , 0x03898204  );
+reg_write( DDR_REG_BASE + 0x00002194 , 0x00070202  );
+reg_write( DDR_REG_BASE + 0x000021b4 , 0x00000904  );
+reg_write( DDR_REG_BASE + 0x00002240 , 0x06040a28  );
+reg_write( DDR_REG_BASE + 0x00003020 , 0x00001100  );
+reg_write( DDR_REG_BASE + 0x00003024 , 0xb4b04b13  );
+reg_write( DDR_REG_BASE + 0x00003034 , 0x00405f04  );
+reg_write( DDR_REG_BASE + 0x00003050 , 0xc0210000  );
+reg_write( DDR_REG_BASE + 0x00003064 , 0x0038003d  );
+reg_write( DDR_REG_BASE + 0x00003068 , 0x005b0000  );
+reg_write( DDR_REG_BASE + 0x000030dc , 0x0083001c  );
+reg_write( DDR_REG_BASE + 0x000030e0 , 0x00020000  );
+reg_write( DDR_REG_BASE + 0x000030e8 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000030ec , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000030f4 , 0x0000023f  );
+reg_write( DDR_REG_BASE + 0x000030f8 , 0x00000002  );
+reg_write( DDR_REG_BASE + 0x00003100 , 0x0d181f14  );
+reg_write( DDR_REG_BASE + 0x00003104 , 0x0004031e  );
+reg_write( DDR_REG_BASE + 0x00003108 , 0x0407090a  );
+reg_write( DDR_REG_BASE + 0x0000310c , 0x00507006  );
+reg_write( DDR_REG_BASE + 0x00003110 , 0x09020509  );
+reg_write( DDR_REG_BASE + 0x00003114 , 0x01010707  );
+reg_write( DDR_REG_BASE + 0x00003118 , 0x01010005  );
+reg_write( DDR_REG_BASE + 0x0000311c , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00003120 , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00003130 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00003134 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00003138 , 0x00000041  );
+reg_write( DDR_REG_BASE + 0x0000313c , 0x80000000  );
+reg_write( DDR_REG_BASE + 0x00003144 , 0x00000094  );
+reg_write( DDR_REG_BASE + 0x00003180 , 0xe0a8002a  );
+reg_write( DDR_REG_BASE + 0x00003190 , 0x03898204  );
+reg_write( DDR_REG_BASE + 0x00003194 , 0x00070202  );
+reg_write( DDR_REG_BASE + 0x000031b4 , 0x00000904  );
+reg_write( DDR_REG_BASE + 0x00003240 , 0x06040a28  );
+reg_write( DDR_REG_BASE + 0x00004020 , 0x00001100  );
+reg_write( DDR_REG_BASE + 0x00004024 , 0xb4b04b13  );
+reg_write( DDR_REG_BASE + 0x00004034 , 0x00405f04  );
+reg_write( DDR_REG_BASE + 0x00004050 , 0xa8210000  );
+reg_write( DDR_REG_BASE + 0x00004064 , 0x0038803d  );
+reg_write( DDR_REG_BASE + 0x00004068 , 0x005b0000  );
+reg_write( DDR_REG_BASE + 0x000040dc , 0x0083001c  );
+reg_write( DDR_REG_BASE + 0x000040e0 , 0x00020000  );
+reg_write( DDR_REG_BASE + 0x000040e8 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000040ec , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x000040f4 , 0x0000023f  );
+reg_write( DDR_REG_BASE + 0x000040f8 , 0x00000002  );
+reg_write( DDR_REG_BASE + 0x00004100 , 0x0d181f14  );
+reg_write( DDR_REG_BASE + 0x00004104 , 0x0004031e  );
+reg_write( DDR_REG_BASE + 0x00004108 , 0x0407090a  );
+reg_write( DDR_REG_BASE + 0x0000410c , 0x00507006  );
+reg_write( DDR_REG_BASE + 0x00004110 , 0x09020509  );
+reg_write( DDR_REG_BASE + 0x00004114 , 0x01010707  );
+reg_write( DDR_REG_BASE + 0x00004118 , 0x01010005  );
+reg_write( DDR_REG_BASE + 0x0000411c , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00004120 , 0x00000101  );
+reg_write( DDR_REG_BASE + 0x00004130 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00004134 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00004138 , 0x00000041  );
+reg_write( DDR_REG_BASE + 0x0000413c , 0x80000000  );
+reg_write( DDR_REG_BASE + 0x00004144 , 0x00000094  );
+reg_write( DDR_REG_BASE + 0x00004180 , 0xe0a8002a  );
+reg_write( DDR_REG_BASE + 0x00004190 , 0x03898204  );
+reg_write( DDR_REG_BASE + 0x00004194 , 0x00070202  );
+reg_write( DDR_REG_BASE + 0x000041b4 , 0x00000904  );
+reg_write( DDR_REG_BASE + 0x00004240 , 0x06040a28  );
+reg_read ( DDR_REG_BASE + 0x00000060 , data);
+reg_write( DDR_REG_BASE + 0x00000400 , 0x00000000  );
+reg_write( DDR_REG_BASE + 0x00000404 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000564 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000614 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000404 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000564 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000614 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000404 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000564 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000614 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000404 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x00000564 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x00000614 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x00000408 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000568 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000618 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000400f  );
+reg_write( DDR_REG_BASE + 0x00000408 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000568 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000618 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000408 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000568 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000618 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000500f  );
+reg_write( DDR_REG_BASE + 0x00000408 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x00000568 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x00000618 , 0x0000100f  );
+reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000100f  );
+reg_read ( DDR_REG_BASE + 0x00000030 ,  data  );
+reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020  );
 
 
 
-reg_write( DDR_REG_BASE + 0x00000304 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00000030 , 0x00000001 );
-reg_read ( DDR_REG_BASE + 0x00000004 ,  data);
-reg_write( DDR_REG_BASE + 0x00000000 , 0x01040008 );
-reg_write( DDR_REG_BASE + 0x00000010 , 0x0000e030 );
-reg_write( DDR_REG_BASE + 0x00000014 , 0x00007563 );
-reg_write( DDR_REG_BASE + 0x00000020 , 0x00001000 );
-reg_write( DDR_REG_BASE + 0x00000024 , 0xb4b04b13 );
-reg_write( DDR_REG_BASE + 0x00000028 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x0000002c , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020 );
-reg_write( DDR_REG_BASE + 0x00000034 , 0x00405f04 );
-reg_write( DDR_REG_BASE + 0x00000038 , 0x00a80002 );
-reg_write( DDR_REG_BASE + 0x0000003c , 0x00010050 );
-reg_write( DDR_REG_BASE + 0x00000050 , 0x90210000 );
-reg_write( DDR_REG_BASE + 0x00000054 , 0x00160013 );
-reg_write( DDR_REG_BASE + 0x00000060 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00000064 , 0x0018001a );
-reg_write( DDR_REG_BASE + 0x00000068 , 0x005b0000 );
-reg_write( DDR_REG_BASE + 0x000000c0 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000000d0 , 0xc0020002 );
-reg_write( DDR_REG_BASE + 0x000000d4 , 0x00010002 );
-reg_write( DDR_REG_BASE + 0x000000d8 , 0x00000800 );
-reg_write( DDR_REG_BASE + 0x000000dc , 0x00830006 );
-reg_write( DDR_REG_BASE + 0x000000e0 , 0x00020000 );
-reg_write( DDR_REG_BASE + 0x000000e4 , 0x00080003 );
-reg_write( DDR_REG_BASE + 0x000000e8 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000000ec , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000000f0 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000000f4 , 0x0000022f );
-reg_write( DDR_REG_BASE + 0x000000f8 , 0x00000002 );
-reg_write( DDR_REG_BASE + 0x00000100 , 0x070a0d08 );
-reg_write( DDR_REG_BASE + 0x00000104 , 0x0002020d );
-reg_write( DDR_REG_BASE + 0x00000108 , 0x02040607 );
-reg_write( DDR_REG_BASE + 0x0000010c , 0x00505006 );
-reg_write( DDR_REG_BASE + 0x00000110 , 0x04020205 );
-reg_write( DDR_REG_BASE + 0x00000114 , 0x01010303 );
-reg_write( DDR_REG_BASE + 0x00000118 , 0x01010003 );
-reg_write( DDR_REG_BASE + 0x0000011c , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00000120 , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00000130 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000134 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000138 , 0x0000001c );
-reg_write( DDR_REG_BASE + 0x0000013c , 0x80000000 );
-reg_write( DDR_REG_BASE + 0x00000144 , 0x00000094 );
-reg_write( DDR_REG_BASE + 0x00000180 , 0xe0480012 );
-reg_write( DDR_REG_BASE + 0x00000184 , 0x00a0c892 );
-reg_write( DDR_REG_BASE + 0x00000188 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000190 , 0x03838200 );
-reg_write( DDR_REG_BASE + 0x00000194 , 0x00070202 );
-reg_write( DDR_REG_BASE + 0x00000198 , 0x07a09110 );
-reg_write( DDR_REG_BASE + 0x000001a0 , 0xa0400018 );
-reg_write( DDR_REG_BASE + 0x000001a4 , 0x00760085 );
-reg_write( DDR_REG_BASE + 0x000001a8 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x000001b4 , 0x00000300 );
-reg_write( DDR_REG_BASE + 0x000001c0 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x000001c4 , 0x85000000 );
-reg_write( DDR_REG_BASE + 0x00000200 , 0x0000001f );
-reg_write( DDR_REG_BASE + 0x00000204 , 0x00080808 );
-reg_write( DDR_REG_BASE + 0x00000208 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x0000020c , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000210 , 0x00001f1f );
-reg_write( DDR_REG_BASE + 0x00000214 , 0x070f0707 );
-reg_write( DDR_REG_BASE + 0x00000218 , 0x0f0f0707 );
-reg_write( DDR_REG_BASE + 0x0000021c , 0x00000f0f );
-reg_write( DDR_REG_BASE + 0x00000224 , 0x07070707 );
-reg_write( DDR_REG_BASE + 0x00000228 , 0x07070707 );
-reg_write( DDR_REG_BASE + 0x0000022c , 0x00000007 );
-reg_write( DDR_REG_BASE + 0x00000240 , 0x06020718 );
-reg_write( DDR_REG_BASE + 0x00000244 , 0x00002301 );
-reg_write( DDR_REG_BASE + 0x00000250 , 0x80c31f18 );
-reg_write( DDR_REG_BASE + 0x00000254 , 0x00002000 );
-reg_write( DDR_REG_BASE + 0x0000025c , 0x0f000001 );
-reg_write( DDR_REG_BASE + 0x00000264 , 0x0f00007f );
-reg_write( DDR_REG_BASE + 0x0000026c , 0x0f00007f );
-reg_write( DDR_REG_BASE + 0x00000270 , 0x04040208 );
-reg_write( DDR_REG_BASE + 0x00000274 , 0x08400810 );
-reg_write( DDR_REG_BASE + 0x00000300 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000304 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x0000030c , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000320 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00000328 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x0000036c , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000490 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00000540 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x000005f0 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x000006a0 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00000750 , 0x00000001 );
-reg_write( DDR_REG_BASE + 0x00002020 , 0x00001000 );
-reg_write( DDR_REG_BASE + 0x00002024 , 0xb4b04b13 );
-reg_write( DDR_REG_BASE + 0x00002034 , 0x00405f04 );
-reg_write( DDR_REG_BASE + 0x00002050 , 0x30210000 );
-reg_write( DDR_REG_BASE + 0x00002064 , 0x0018001a );
-reg_write( DDR_REG_BASE + 0x00002068 , 0x005b0000 );
-reg_write( DDR_REG_BASE + 0x000020dc , 0x00830006 );
-reg_write( DDR_REG_BASE + 0x000020e0 , 0x00020000 );
-reg_write( DDR_REG_BASE + 0x000020e8 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000020ec , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000020f4 , 0x0000022f );
-reg_write( DDR_REG_BASE + 0x000020f8 , 0x00000002 );
-reg_write( DDR_REG_BASE + 0x00002100 , 0x070a0d08 );
-reg_write( DDR_REG_BASE + 0x00002104 , 0x0002020d );
-reg_write( DDR_REG_BASE + 0x00002108 , 0x02040607 );
-reg_write( DDR_REG_BASE + 0x0000210c , 0x00505006 );
-reg_write( DDR_REG_BASE + 0x00002110 , 0x04020205 );
-reg_write( DDR_REG_BASE + 0x00002114 , 0x01010303 );
-reg_write( DDR_REG_BASE + 0x00002118 , 0x01010003 );
-reg_write( DDR_REG_BASE + 0x0000211c , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00002120 , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00002130 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00002134 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00002138 , 0x0000001c );
-reg_write( DDR_REG_BASE + 0x0000213c , 0x80000000 );
-reg_write( DDR_REG_BASE + 0x00002144 , 0x00000094 );
-reg_write( DDR_REG_BASE + 0x00002180 , 0xe0480012 );
-reg_write( DDR_REG_BASE + 0x00002190 , 0x03838200 );
-reg_write( DDR_REG_BASE + 0x00002194 , 0x00070202 );
-reg_write( DDR_REG_BASE + 0x000021b4 , 0x00000300 );
-reg_write( DDR_REG_BASE + 0x00002240 , 0x06020718 );
-reg_write( DDR_REG_BASE + 0x00003020 , 0x00001000 );
-reg_write( DDR_REG_BASE + 0x00003024 , 0xb4b04b13 );
-reg_write( DDR_REG_BASE + 0x00003034 , 0x00405f04 );
-reg_write( DDR_REG_BASE + 0x00003050 , 0xc0210000 );
-reg_write( DDR_REG_BASE + 0x00003064 , 0x0018001a );
-reg_write( DDR_REG_BASE + 0x00003068 , 0x005b0000 );
-reg_write( DDR_REG_BASE + 0x000030dc , 0x00830006 );
-reg_write( DDR_REG_BASE + 0x000030e0 , 0x00020000 );
-reg_write( DDR_REG_BASE + 0x000030e8 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000030ec , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000030f4 , 0x0000022f );
-reg_write( DDR_REG_BASE + 0x000030f8 , 0x00000002 );
-reg_write( DDR_REG_BASE + 0x00003100 , 0x070a0d08 );
-reg_write( DDR_REG_BASE + 0x00003104 , 0x0002020d );
-reg_write( DDR_REG_BASE + 0x00003108 , 0x02040607 );
-reg_write( DDR_REG_BASE + 0x0000310c , 0x00505006 );
-reg_write( DDR_REG_BASE + 0x00003110 , 0x04020205 );
-reg_write( DDR_REG_BASE + 0x00003114 , 0x01010303 );
-reg_write( DDR_REG_BASE + 0x00003118 , 0x01010003 );
-reg_write( DDR_REG_BASE + 0x0000311c , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00003120 , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00003130 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00003134 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00003138 , 0x0000001c );
-reg_write( DDR_REG_BASE + 0x0000313c , 0x80000000 );
-reg_write( DDR_REG_BASE + 0x00003144 , 0x00000094 );
-reg_write( DDR_REG_BASE + 0x00003180 , 0xe0480012 );
-reg_write( DDR_REG_BASE + 0x00003190 , 0x03838200 );
-reg_write( DDR_REG_BASE + 0x00003194 , 0x00070202 );
-reg_write( DDR_REG_BASE + 0x000031b4 , 0x00000300 );
-reg_write( DDR_REG_BASE + 0x00003240 , 0x06020718 );
-reg_write( DDR_REG_BASE + 0x00004020 , 0x00001000 );
-reg_write( DDR_REG_BASE + 0x00004024 , 0xb4b04b13 );
-reg_write( DDR_REG_BASE + 0x00004034 , 0x00405f04 );
-reg_write( DDR_REG_BASE + 0x00004050 , 0xa8210000 );
-reg_write( DDR_REG_BASE + 0x00004064 , 0x0018801a );
-reg_write( DDR_REG_BASE + 0x00004068 , 0x005b0000 );
-reg_write( DDR_REG_BASE + 0x000040dc , 0x00830006 );
-reg_write( DDR_REG_BASE + 0x000040e0 , 0x00020000 );
-reg_write( DDR_REG_BASE + 0x000040e8 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000040ec , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000040f4 , 0x0000022f );
-reg_write( DDR_REG_BASE + 0x000040f8 , 0x00000002 );
-reg_write( DDR_REG_BASE + 0x00004100 , 0x070a0d08 );
-reg_write( DDR_REG_BASE + 0x00004104 , 0x0002020d );
-reg_write( DDR_REG_BASE + 0x00004108 , 0x02040607 );
-reg_write( DDR_REG_BASE + 0x0000410c , 0x00505006 );
-reg_write( DDR_REG_BASE + 0x00004110 , 0x04020205 );
-reg_write( DDR_REG_BASE + 0x00004114 , 0x01010303 );
-reg_write( DDR_REG_BASE + 0x00004118 , 0x01010003 );
-reg_write( DDR_REG_BASE + 0x0000411c , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00004120 , 0x00000101 );
-reg_write( DDR_REG_BASE + 0x00004130 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00004134 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00004138 , 0x0000001c );
-reg_write( DDR_REG_BASE + 0x0000413c , 0x80000000 );
-reg_write( DDR_REG_BASE + 0x00004144 , 0x00000094 );
-reg_write( DDR_REG_BASE + 0x00004180 , 0xe0480012 );
-reg_write( DDR_REG_BASE + 0x00004190 , 0x03838200 );
-reg_write( DDR_REG_BASE + 0x00004194 , 0x00070202 );
-reg_write( DDR_REG_BASE + 0x000041b4 , 0x00000300 );
-reg_write( DDR_REG_BASE + 0x00004240 , 0x06020718 );
-reg_read ( DDR_REG_BASE + 0x00000060 ,  data);
-reg_write( DDR_REG_BASE + 0x00000400 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000404 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000564 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000614 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000404 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000564 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000614 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000404 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000564 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000614 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000404 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x000004b4 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x00000564 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x00000614 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x000006c4 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x00000408 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000568 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000618 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000400f );
-reg_write( DDR_REG_BASE + 0x00000408 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000568 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000618 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000408 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000568 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000618 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000500f );
-reg_write( DDR_REG_BASE + 0x00000408 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x000004b8 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x00000568 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x00000618 , 0x0000100f );
-reg_write( DDR_REG_BASE + 0x000006c8 , 0x0000100f );
-reg_read ( DDR_REG_BASE + 0x00000030 , data );
-reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020 );
-
-////////////////////rst dess////////////////////////////////////////
- reg_read ( 0x9110309c, data  );
- data=data|0x00020000;
- reg_write ( 0x9110309c, data  );
+//////////////rst dess//////////////////////////////////////
+reg_read ( 0x9110309c, data  );
+data=data|0x00020000;
+reg_write ( 0x9110309c, data  );
 
 
-reg_write( DDR_REG_BASE + 0x00000304 , 0x00000000 );
-reg_read ( DDR_REG_BASE + 0x00000030 , data );
-reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020 );
-reg_read ( DDR_REG_BASE + 0x00000030 , data );
-reg_write( DDR_REG_BASE + 0x00000030 , 0x00000020 );
-reg_read ( DDR_REG_BASE + 0x000001c4 , data );
-reg_write( DDR_REG_BASE + 0x000001c4 , 0x85000000 );
-reg_write( DDR_REG_BASE + 0x00000320 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000000 );
-reg_write( DDR_REG_BASE + 0x00000304 , 0x00000002 );
-reg_read ( DDR_REG_BASE + 0x000000d0 , data );
-reg_read ( DDR_REG_BASE + 0x000001c0 , data );
-reg_read ( DDR_REG_BASE + 0x00000000 , data );
-reg_read ( DDR_REG_BASE + 0x000000dc , data );
-reg_read ( DDR_REG_BASE + 0x000000dc , data );
-reg_read ( DDR_REG_BASE + 0x000000e0 , data );
-reg_read ( DDR_REG_BASE + 0x000000d0 , data );
-reg_read ( DDR_REG_BASE + 0x000001c0 , data );
-reg_read ( DDR_REG_BASE + 0x00000000 , data );
-reg_read ( DDR_REG_BASE + 0x000000dc , data );
-reg_read ( DDR_REG_BASE + 0x000000dc , data );
-reg_read ( DDR_REG_BASE + 0x000000e0 , data );
-reg_read ( DDR_REG_BASE + 0x000000d0 , data );
 
-//////////////////////////  phy init  begin/////////
 
+
+reg_write( DDR_REG_BASE + 0x00000304 ,  0x00000000 );
+reg_read ( DDR_REG_BASE + 0x00000030 ,   data);
+reg_write( DDR_REG_BASE + 0x00000030 ,  0x00000020 );
+reg_read ( DDR_REG_BASE + 0x00000030 ,  data );
+reg_write( DDR_REG_BASE + 0x00000030 ,  0x00000020 );
+reg_read ( DDR_REG_BASE + 0x000001c4 ,  data );
+reg_write( DDR_REG_BASE + 0x000001c4 ,  0x85000000 );
+reg_write( DDR_REG_BASE + 0x00000320 ,  0x00000000 );
+reg_write( DDR_REG_BASE + 0x000001b0 ,  0x00000000 );
+reg_write( DDR_REG_BASE + 0x000001b0 ,  0x00000000 );
+reg_write( DDR_REG_BASE + 0x00000304 ,  0x00000002 );
+reg_read ( DDR_REG_BASE + 0x000000d0 ,   data);
+reg_read ( DDR_REG_BASE + 0x000001c0 ,   data);
+reg_read ( DDR_REG_BASE + 0x00000000 ,   data);
+reg_read ( DDR_REG_BASE + 0x000000dc ,   data);
+reg_read ( DDR_REG_BASE + 0x000000dc ,   data);
+reg_read ( DDR_REG_BASE + 0x000000e0 ,   data);
+reg_read ( DDR_REG_BASE + 0x000000d0 ,   data);
+reg_read ( DDR_REG_BASE + 0x000001c0 ,   data);
+reg_read ( DDR_REG_BASE + 0x00000000 ,   data);
+reg_read ( DDR_REG_BASE + 0x000000dc ,   data);
+reg_read ( DDR_REG_BASE + 0x000000dc ,   data);
+reg_read ( DDR_REG_BASE + 0x000000e0 ,   data);
+reg_read ( DDR_REG_BASE + 0x000000d0 ,   data);
+
+
+
+///////////////////////phy  init  begin///////////////////////////
 
 reg_write(   DDR_REG_BASE + 0x1005f*4+0x02000000,0x2ff);
 reg_write(   DDR_REG_BASE + 0x1015f*4+0x02000000,0x2ff);
@@ -332,13 +440,15 @@ reg_write(   DDR_REG_BASE + 0x6055 *4+0x02000000,0xff);
 reg_write(   DDR_REG_BASE + 0x7055 *4+0x02000000,0x3ff);
 reg_write(   DDR_REG_BASE + 0x8055 *4+0x02000000,0x3ff);
 reg_write(   DDR_REG_BASE + 0x9055 *4+0x02000000,0x3ff);
-reg_write(   DDR_REG_BASE + 0x200c5*4+0x02000000,0x7);
-reg_write(   DDR_REG_BASE + 0x2002e*4+0x02000000,0x1);
+reg_write(   DDR_REG_BASE + 0x200c5*4+0x02000000,0xb);
+reg_write(   DDR_REG_BASE + 0x2002e*4+0x02000000,0x2);
 reg_write(   DDR_REG_BASE + 0x20024*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x2003a*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x2007d*4+0x02000000,0x212);
 reg_write(   DDR_REG_BASE + 0x2007c*4+0x02000000,0x61);
 reg_write(   DDR_REG_BASE + 0x20056*4+0x02000000,0xa);
+// // [phyinit_C_initPhyConfig] Pstate=0, Memclk=800MHz, Programming TxOdtDrvStren::ODTStrenP to 0x18
+// // [phyinit_C_initPhyConfig] Pstate=0, Memclk=800MHz, Programming TxOdtDrvStren::ODTStrenN to 0x0
 
 //iteration place
 //PHY ODT --pull up
@@ -348,6 +458,7 @@ reg_write(   DDR_REG_BASE + 0x20056*4+0x02000000,0xa);
 //01_1010 0x1a Pullup/Down:48
 //11_1000 0x38 Pullup/Down:40
 //11_1010 0x3a Pullup/Down:34.3
+
 reg_write(   DDR_REG_BASE + 0x1004d*4+0x02000000,0x18);
 reg_write(   DDR_REG_BASE + 0x1014d*4+0x02000000,0x18);
 reg_write(   DDR_REG_BASE + 0x1104d*4+0x02000000,0x18);
@@ -368,6 +479,7 @@ reg_write(   DDR_REG_BASE + 0x1314d*4+0x02000000,0x18);
 //0110_10 01_1010 0x69a Pullup/Down:48
 //1110_00 11_1000 0xe38 Pullup/Down:40
 //1110_10 11_1010 0xeba Pullup/Down:34.3
+
 reg_write(   DDR_REG_BASE + 0x10049*4+0x02000000,0x618);
 reg_write(   DDR_REG_BASE + 0x10149*4+0x02000000,0x618);
 reg_write(   DDR_REG_BASE + 0x11049*4+0x02000000,0x618);
@@ -389,7 +501,8 @@ reg_write(   DDR_REG_BASE + 0x13149*4+0x02000000,0x618);
 
 // // [phyinit_C_initPhyConfig] Programming ATxImpedance::ADrvStrenP to 0x1
 // // [phyinit_C_initPhyConfig] Programming ATxImpedance::ADrvStrenN to 0x1
-reg_write(   DDR_REG_BASE + 0x43   *4+0x02000000,0x63); //from 20 to 120 to 40
+
+reg_write(   DDR_REG_BASE + 0x43   *4+0x02000000,0x63);
 reg_write(   DDR_REG_BASE + 0x1043 *4+0x02000000,0x63);
 reg_write(   DDR_REG_BASE + 0x2043 *4+0x02000000,0x63);
 reg_write(   DDR_REG_BASE + 0x3043 *4+0x02000000,0x63);
@@ -400,10 +513,11 @@ reg_write(   DDR_REG_BASE + 0x7043 *4+0x02000000,0x63);
 reg_write(   DDR_REG_BASE + 0x8043 *4+0x02000000,0x63);
 reg_write(   DDR_REG_BASE + 0x9043 *4+0x02000000,0x63);
 
+
 reg_write(   DDR_REG_BASE + 0x20018*4+0x02000000,0x5);
 reg_write(   DDR_REG_BASE + 0x20075*4+0x02000000,0x1);
 reg_write(   DDR_REG_BASE + 0x20050*4+0x02000000,0x0);
-reg_write(   DDR_REG_BASE + 0x20008*4+0x02000000,0xc8);
+reg_write(   DDR_REG_BASE + 0x20008*4+0x02000000,0x1d3);
 reg_write(   DDR_REG_BASE + 0x20088*4+0x02000000,0x9);
 
 //iteration place
@@ -420,10 +534,9 @@ reg_write(   DDR_REG_BASE + 0x20088*4+0x02000000,0x9);
 // // [phyinit_C_initPhyConfig] Pstate=0, Programming VrefInGlobal::GlobalVrefInDAC to 0x51
 // // [phyinit_C_initPhyConfig] Pstate=0, Programming VrefInGlobal to 0x288
 
-//reg_write(   DDR_REG_BASE + 0x200b2*4+0x02000000,0x32c);//hyg
-//reg_write(   DDR_REG_BASE + 0x200b2*4+0x02000000,0x208);//hyg
-//reg_write(   DDR_REG_BASE + 0x200b2*4+0x02000000,0x32C);//hyg
-reg_write(   DDR_REG_BASE + 0x200b2*4+0x02000000,0x288);//hyg
+reg_write(   DDR_REG_BASE + 0x200b2*4+0x02000000,0x288); //vref
+
+
 
 reg_write(   DDR_REG_BASE + 0x10043*4+0x02000000,0x5b1);
 reg_write(   DDR_REG_BASE + 0x10143*4+0x02000000,0x5b1);
@@ -434,7 +547,7 @@ reg_write(   DDR_REG_BASE + 0x12143*4+0x02000000,0x5b1);
 reg_write(   DDR_REG_BASE + 0x13043*4+0x02000000,0x5b1);
 reg_write(   DDR_REG_BASE + 0x13143*4+0x02000000,0x5b1);
 reg_write(   DDR_REG_BASE + 0x200fa*4+0x02000000,0x1);
-reg_write(   DDR_REG_BASE + 0x20019*4+0x02000000,0x0); //hyg
+reg_write(   DDR_REG_BASE + 0x20019*4+0x02000000,0x1); //hyg
 reg_write(   DDR_REG_BASE + 0x200f0*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x200f1*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x200f2*4+0x02000000,0x4444);
@@ -449,6 +562,8 @@ reg_write(   DDR_REG_BASE + 0x1204a*4+0x02000000,0x500);
 reg_write(   DDR_REG_BASE + 0x1304a*4+0x02000000,0x500);
 reg_write(   DDR_REG_BASE + 0x20025*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x2002c*4+0x02000000,0x0);
+
+//swap ca
 reg_write(   DDR_REG_BASE + 0x20100*4+0x02000000,0x9); //CA0
 reg_write(   DDR_REG_BASE + 0x20101*4+0x02000000,0x8); //CA1
 reg_write(   DDR_REG_BASE + 0x20102*4+0x02000000,0x7); //CA2
@@ -460,112 +575,50 @@ reg_write(   DDR_REG_BASE + 0x20107*4+0x02000000,0x2); //CA7
 reg_write(   DDR_REG_BASE + 0x20108*4+0x02000000,0x1); //CA8
 reg_write(   DDR_REG_BASE + 0x20109*4+0x02000000,0x0); //CA9
 
-#if 1
-//reg_write(   DDR_REG_BASE + 0x110a0*4+0x02000000,0x2); //lndq =1
-//reg_write(   DDR_REG_BASE + 0x110a1*4+0x02000000,0x4); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a2*4+0x02000000,0x0); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a3*4+0x02000000,0x5); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a4*4+0x02000000,0x3); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a5*4+0x02000000,0x6); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a6*4+0x02000000,0x1); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x110a7*4+0x02000000,0x7); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a0*4+0x02000000,0x0); //lndq =1
-//reg_write(   DDR_REG_BASE + 0x130a1*4+0x02000000,0x4); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a2*4+0x02000000,0x1); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a3*4+0x02000000,0x5); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a4*4+0x02000000,0x3); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a5*4+0x02000000,0x7); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a6*4+0x02000000,0x2); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x130a7*4+0x02000000,0x6); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a0*4+0x02000000,0x5); //lndq =1
-//reg_write(   DDR_REG_BASE + 0x100a1*4+0x02000000,0x4); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a2*4+0x02000000,0x1); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a3*4+0x02000000,0x0); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a4*4+0x02000000,0x3); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a5*4+0x02000000,0x2); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a6*4+0x02000000,0x6); //CA1 =0
-//reg_write(   DDR_REG_BASE + 0x100a7*4+0x02000000,0x7); //CA1 =0
-
-  reg_write(DDR_REG_BASE + 0x120a0 * 4 + 0x2000000, 0x0); //lndq =1 dq0(????)---c17(k230)--dq0
-  reg_write(DDR_REG_BASE + 0x120a1 * 4 + 0x2000000, 0x6); //CA1 =0	dq1---b19(k230)---dq6
-  reg_write(DDR_REG_BASE + 0x120a2 * 4 + 0x2000000, 0x1); //CA1 =0	dq2--d16-dq1
+//swap dq
+  reg_write(DDR_REG_BASE + 0x120a0 * 4 + 0x2000000, 0x0); //lndq =1
+  reg_write(DDR_REG_BASE + 0x120a1 * 4 + 0x2000000, 0x7); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x120a2 * 4 + 0x2000000, 0x2); //CA1 =0
   reg_write(DDR_REG_BASE + 0x120a3 * 4 + 0x2000000, 0x3); //CA1 =0
-  reg_write(DDR_REG_BASE + 0x120a4 * 4 + 0x2000000, 0x2); //CA1 =0	dq4--c17--dq2
+  reg_write(DDR_REG_BASE + 0x120a4 * 4 + 0x2000000, 0x1); //CA1 =0
   reg_write(DDR_REG_BASE + 0x120a5 * 4 + 0x2000000, 0x5); //CA1 =0
-  reg_write(DDR_REG_BASE + 0x120a6 * 4 + 0x2000000, 0x4); //CA1 =0	dq6--e18--dq4
-  reg_write(DDR_REG_BASE + 0x120a7 * 4 + 0x2000000, 0x7); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x120a6 * 4 + 0x2000000, 0x4); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x120a7 * 4 + 0x2000000, 0x6); //CA1 =0
 
-  reg_write(DDR_REG_BASE + 0x110a0 * 4 + 0x2000000, 0x0); //lndq =1	dq8_0--r17--dq10_2
-  reg_write(DDR_REG_BASE + 0x110a1 * 4 + 0x2000000, 0x1); //CA1 =0	dq9_1--t18--dq12_4
-  reg_write(DDR_REG_BASE + 0x110a2 * 4 + 0x2000000, 0x2); //CA1 =0	dq10--R18--dq8_0
-  reg_write(DDR_REG_BASE + 0x110a3 * 4 + 0x2000000, 0x6); //CA1 =0	dq11--P16--dq9_1
-  reg_write(DDR_REG_BASE + 0x110a4 * 4 + 0x2000000, 0x4); //CA1 =0	dq12--w19--dq11_3
-  reg_write(DDR_REG_BASE + 0x110a5 * 4 + 0x2000000, 0x3); //CA1 =0	dq13--u20--dq13_5
-  reg_write(DDR_REG_BASE + 0x110a6 * 4 + 0x2000000, 0x5); //CA1 =0	dq14--u18--dq14_6
+  reg_write(DDR_REG_BASE + 0x110a0 * 4 + 0x2000000, 0x3); //lndq =1
+  reg_write(DDR_REG_BASE + 0x110a1 * 4 + 0x2000000, 0x1); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x110a2 * 4 + 0x2000000, 0x6); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x110a3 * 4 + 0x2000000, 0x0); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x110a4 * 4 + 0x2000000, 0x4); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x110a5 * 4 + 0x2000000, 0x2); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x110a6 * 4 + 0x2000000, 0x5); //CA1 =0
   reg_write(DDR_REG_BASE + 0x110a7 * 4 + 0x2000000, 0x7); //CA1 =0
 
   reg_write(DDR_REG_BASE + 0x130a0 * 4 + 0x2000000, 0x0); //lndq =1
-  reg_write(DDR_REG_BASE + 0x130a1 * 4 + 0x2000000, 0x1); //CA1 =0	dq17--d14--dq20_4
-  reg_write(DDR_REG_BASE + 0x130a2 * 4 + 0x2000000, 0x6); //CA1 =0 	dq18--c16--dq18_2
-  reg_write(DDR_REG_BASE + 0x130a3 * 4 + 0x2000000, 0x3); //CA1 =0	dq19--a14--dq21_5
-  reg_write(DDR_REG_BASE + 0x130a4 * 4 + 0x2000000, 0x2); //CA1 =0	dq20--b14--dq17_1
-  reg_write(DDR_REG_BASE + 0x130a5 * 4 + 0x2000000, 0x5); //CA1 =0	dq21--b16--dq23_7
-  reg_write(DDR_REG_BASE + 0x130a6 * 4 + 0x2000000, 0x4); //CA1 =0	dq22--a17--dq19_3
-  reg_write(DDR_REG_BASE + 0x130a7 * 4 + 0x2000000, 0x7); //CA1 =0	dq23--b17--dq22_6
+  reg_write(DDR_REG_BASE + 0x130a1 * 4 + 0x2000000, 0x1); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a2 * 4 + 0x2000000, 0x6); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a3 * 4 + 0x2000000, 0x3); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a4 * 4 + 0x2000000, 0x2); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a5 * 4 + 0x2000000, 0x5); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a6 * 4 + 0x2000000, 0x4); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x130a7 * 4 + 0x2000000, 0x7); //CA1 =0
 
-  reg_write(DDR_REG_BASE + 0x100a0 * 4 + 0x2000000, 0x6); //lndq =1 dq24--t16--dq30_6
-  reg_write(DDR_REG_BASE + 0x100a1 * 4 + 0x2000000, 0x2); //CA1 =0	dq25--v18--dq25_1
-  reg_write(DDR_REG_BASE + 0x100a2 * 4 + 0x2000000, 0x0); //CA1 =0	dq26--u17--dq29_5
-  reg_write(DDR_REG_BASE + 0x100a3 * 4 + 0x2000000, 0x4); //CA1 =0	dq27--y16--dq27_3
-  reg_write(DDR_REG_BASE + 0x100a4 * 4 + 0x2000000, 0x3); //CA1 =0	dq28--e18--dq24_0
-  reg_write(DDR_REG_BASE + 0x100a5 * 4 + 0x2000000, 0x1); //CA1 =0	dq29--y18--dq28_4
-  reg_write(DDR_REG_BASE + 0x100a6 * 4 + 0x2000000, 0x5); //CA1 =0	dq30--v16--dq26_2
+  reg_write(DDR_REG_BASE + 0x100a0 * 4 + 0x2000000, 0x0); //lndq =1
+  reg_write(DDR_REG_BASE + 0x100a1 * 4 + 0x2000000, 0x2); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x100a2 * 4 + 0x2000000, 0x1); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x100a3 * 4 + 0x2000000, 0x4); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x100a4 * 4 + 0x2000000, 0x3); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x100a5 * 4 + 0x2000000, 0x6); //CA1 =0
+  reg_write(DDR_REG_BASE + 0x100a6 * 4 + 0x2000000, 0x5); //CA1 =0
   reg_write(DDR_REG_BASE + 0x100a7 * 4 + 0x2000000, 0x7); //CA1 =0
 
 
-#else
-   reg_write(DDR_REG_BASE + 0x100a0 * 4 + 0x2000000, 0x0); //lndq =1
-   reg_write(DDR_REG_BASE + 0x100a1 * 4 + 0x2000000, 0x1); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a2 * 4 + 0x2000000, 0x2); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a3 * 4 + 0x2000000, 0x3); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a4 * 4 + 0x2000000, 0x4); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a5 * 4 + 0x2000000, 0x5); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a6 * 4 + 0x2000000, 0x6); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x100a7 * 4 + 0x2000000, 0x7); //CA1 =0
 
-   reg_write(DDR_REG_BASE + 0x110a0 * 4 + 0x2000000, 0x2); //lndq =1
-   reg_write(DDR_REG_BASE + 0x110a1 * 4 + 0x2000000, 0x6); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a2 * 4 + 0x2000000, 0x0); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a3 * 4 + 0x2000000, 0x4); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a4 * 4 + 0x2000000, 0x1); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a5 * 4 + 0x2000000, 0x3); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a6 * 4 + 0x2000000, 0x5); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x110a7 * 4 + 0x2000000, 0x7); //CA1 =0
-
-   reg_write(DDR_REG_BASE + 0x120a0 * 4 + 0x2000000, 0x0); //lndq =1
-   reg_write(DDR_REG_BASE + 0x120a1 * 4 + 0x2000000, 0x2); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a2 * 4 + 0x2000000, 0x6); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a3 * 4 + 0x2000000, 0x4); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a4 * 4 + 0x2000000, 0x1); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a5 * 4 + 0x2000000, 0x3); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a6 * 4 + 0x2000000, 0x7); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x120a7 * 4 + 0x2000000, 0x5); //CA1 =0
-
-   reg_write(DDR_REG_BASE + 0x130a0 * 4 + 0x2000000, 0x3); //lndq =1
-   reg_write(DDR_REG_BASE + 0x130a1 * 4 + 0x2000000, 0x2); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a2 * 4 + 0x2000000, 0x5); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a3 * 4 + 0x2000000, 0x4); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a4 * 4 + 0x2000000, 0x1); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a5 * 4 + 0x2000000, 0x0); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a6 * 4 + 0x2000000, 0x6); //CA1 =0
-   reg_write(DDR_REG_BASE + 0x130a7 * 4 + 0x2000000, 0x7); //CA1 =0
-#endif
 
 reg_write(   DDR_REG_BASE + 0x20060*4+0x02000000,0x2);
 
 
 reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x0);
-
 reg_write(   DDR_REG_BASE + 0x50000*4+0x02000000,0xb0);
 reg_write(   DDR_REG_BASE + 0x50001*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x50002*4+0x02000000,0x50);
@@ -16951,14 +17004,16 @@ reg_write(   DDR_REG_BASE + 0x53ffd*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x53ffe*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x53fff*4+0x02000000,0x0);
 
+
 reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x1);
 
-reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x0);
 
-reg_write(   DDR_REG_BASE + 0x54000*4+0x02000000,0x000); //hyg
+
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x0);
+reg_write(   DDR_REG_BASE + 0x54000*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54001*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54002*4+0x02000000,0x0);
-reg_write(   DDR_REG_BASE + 0x54003*4+0x02000000,0x320);
+reg_write(   DDR_REG_BASE + 0x54003*4+0x02000000,0x74a);
 reg_write(   DDR_REG_BASE + 0x54004*4+0x02000000,0x2);
 reg_write(   DDR_REG_BASE + 0x54005*4+0x02000000,0x0);
 
@@ -16968,7 +17023,8 @@ reg_write(   DDR_REG_BASE + 0x54005*4+0x02000000,0x0);
 // 0x60  75%
 // 0x56  67%
 // 0x20  25%
-reg_write(   DDR_REG_BASE + 0x54006*4+0x02000000,0x60);//hyg
+
+reg_write(   DDR_REG_BASE + 0x54006*4+0x02000000,0x60); //vref ratio
 
 
 reg_write(   DDR_REG_BASE + 0x54007*4+0x02000000,0x0);
@@ -16976,11 +17032,11 @@ reg_write(   DDR_REG_BASE + 0x54008*4+0x02000000,0x131f);
 reg_write(   DDR_REG_BASE + 0x54009*4+0x02000000,0xc8);
 reg_write(   DDR_REG_BASE + 0x5400a*4+0x02000000,0x2);
 reg_write(   DDR_REG_BASE + 0x5400b*4+0x02000000,0x0);
+
+//swap dbyte
 reg_write(   DDR_REG_BASE + 0x5400d*4+0x02000000,0x8083);
 reg_write(   DDR_REG_BASE + 0x5400c*4+0x02000000,0x8182);
 
-//reg_write(   DDR_REG_BASE + 0x5400d*4+0x02000000,0x8280);
-//reg_write(   DDR_REG_BASE + 0x5400c*4+0x02000000,0x8183);
 reg_write(   DDR_REG_BASE + 0x5400e*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x5400f*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54010*4+0x02000000,0x0);
@@ -17004,10 +17060,11 @@ reg_write(   DDR_REG_BASE + 0x54018*4+0x02000000,0x8300);
    //0x9:(34.3 pulldown & 40 pull up
    //0xa:(40 pulldown & 48 pull up
    //0xb:(34.3 pulldown & 48 pull up
-reg_write(   DDR_REG_BASE + 0x54019*4+0x02000000,0x0206);
-reg_write(   DDR_REG_BASE + 0x5401d*4+0x02000000,0x0206);
-reg_write(   DDR_REG_BASE + 0x5402c*4+0x02000000,0x0206);
-reg_write(   DDR_REG_BASE + 0x54030*4+0x02000000,0x0206);
+
+reg_write(   DDR_REG_BASE + 0x54019*4+0x02000000,0x21c);
+reg_write(   DDR_REG_BASE + 0x5401d*4+0x02000000,0x21c);
+reg_write(   DDR_REG_BASE + 0x5402c*4+0x02000000,0x21c);
+reg_write(   DDR_REG_BASE + 0x54030*4+0x02000000,0x21c);
 
 //iteration place
 //DRAM DQ ODT -higher 8 bit
@@ -17015,15 +17072,14 @@ reg_write(   DDR_REG_BASE + 0x54030*4+0x02000000,0x0206);
    //0x5:(ODT:60)
    //0x6:(ODT:120)
    //0x7:(ODT:240)
-reg_write(   DDR_REG_BASE + 0x5401a*4+0x02000000,0x0600);
-reg_write(   DDR_REG_BASE + 0x5401e*4+0x02000000,0x0600);
-reg_write(   DDR_REG_BASE + 0x5402d*4+0x02000000,0x0600);
-reg_write(   DDR_REG_BASE + 0x54031*4+0x02000000,0x0600);
+reg_write(   DDR_REG_BASE + 0x5401a*4+0x02000000,0x000);
+reg_write(   DDR_REG_BASE + 0x5401e*4+0x02000000,0x000);
+reg_write(   DDR_REG_BASE + 0x5402d*4+0x02000000,0x000);
+reg_write(   DDR_REG_BASE + 0x54031*4+0x02000000,0x000);
+
 
 reg_write(   DDR_REG_BASE + 0x5401b*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x5401c*4+0x02000000,0x8300);
-
-
 reg_write(   DDR_REG_BASE + 0x5401f*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54020*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54021*4+0x02000000,0x0);
@@ -17038,11 +17094,8 @@ reg_write(   DDR_REG_BASE + 0x54029*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x5402a*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x5402b*4+0x02000000,0x8300);
 
-
 reg_write(   DDR_REG_BASE + 0x5402e*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x5402f*4+0x02000000,0x8300);
-
-
 reg_write(   DDR_REG_BASE + 0x54032*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54033*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54034*4+0x02000000,0x0);
@@ -17852,16 +17905,15 @@ reg_write(   DDR_REG_BASE + 0x54357*4+0x02000000,0x700);
 reg_write(   DDR_REG_BASE + 0x54358*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x54359*4+0x02000000,0x0);
 
-reg_write(   DDR_REG_BASE +  0xd0000*4+0x02000000     ,0x1);
+
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x1);
 
 
 
-reg_write(   DDR_REG_BASE +  0x000d0000*4 +0x02000000 , 0x00000001 );
-reg_write(   DDR_REG_BASE +  0x000d0099*4 +0x02000000 , 0x00000009 );
-reg_write(   DDR_REG_BASE +  0x000d0099*4 +0x02000000 , 0x00000001 );
-reg_write(   DDR_REG_BASE +  0x000d0099*4 +0x02000000 , 0x00000000 );
-
-
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x1);
+reg_write(   DDR_REG_BASE + 0xd0099*4+0x02000000,0x9);
+reg_write(   DDR_REG_BASE + 0xd0099*4+0x02000000,0x1);
+reg_write(   DDR_REG_BASE + 0xd0099*4+0x02000000,0x0);
 
 while((train_data&0x7) !=0x07) {
 
@@ -17873,6 +17925,9 @@ while((train_data&0x7) !=0x07) {
 
 
  reg_read (   DDR_REG_BASE +   0x000d0032*4 +0x02000000 ,  train_data  );
+  // //printf("train_data  is : %x",train_data);
+  // printf("ddr 1866\n");
+
   switch(train_data)
   {
   case 0x00000000: printf("%08X: PMU Major Msg: End of initialization                                         \n",train_data);break;
@@ -17909,10 +17964,11 @@ train_data=0;
 
 
 
-reg_write(   DDR_REG_BASE + 0xd0099*4 +0x02000000,0x1);
-reg_write(   DDR_REG_BASE + 0xd0000*4 +0x02000000,0x0);
-reg_write(   DDR_REG_BASE + 0xd0000*4 +0x02000000,0x1);
-reg_write(   DDR_REG_BASE + 0xd0000*4 +0x02000000,0x0);
+reg_write(   DDR_REG_BASE + 0xd0099*4+0x02000000,0x1);
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x0);
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x1);
+reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x0);
+
 
 
 reg_write(   DDR_REG_BASE + 0x90000*4+0x02000000,0x10);
@@ -18300,10 +18356,11 @@ reg_write(   DDR_REG_BASE + 0x400d4*4+0x02000000,0x10f);
 reg_write(   DDR_REG_BASE + 0x400d5*4+0x02000000,0x202);
 reg_write(   DDR_REG_BASE + 0x400d6*4+0x02000000,0x20a);
 reg_write(   DDR_REG_BASE + 0x400d7*4+0x02000000,0x20b);
-reg_write(   DDR_REG_BASE + 0x2000b*4+0x02000000,0x19);
-reg_write(   DDR_REG_BASE + 0x2000c*4+0x02000000,0x32);
-reg_write(   DDR_REG_BASE + 0x2000d*4+0x02000000,0x1f4);
-reg_write(   DDR_REG_BASE + 0x2000e*4+0x02000000,0x10);
+
+reg_write(   DDR_REG_BASE + 0x2000b*4+0x02000000,0x3a);
+reg_write(   DDR_REG_BASE + 0x2000c*4+0x02000000,0x74);
+reg_write(   DDR_REG_BASE + 0x2000d*4+0x02000000,0x48e);
+reg_write(   DDR_REG_BASE + 0x2000e*4+0x02000000,0x2c);
 reg_write(   DDR_REG_BASE + 0x9000c*4+0x02000000,0x0);
 reg_write(   DDR_REG_BASE + 0x9000d*4+0x02000000,0x173);
 reg_write(   DDR_REG_BASE + 0x9000e*4+0x02000000,0x60);
@@ -18315,18 +18372,19 @@ reg_write(   DDR_REG_BASE + 0x90013*4+0x02000000,0x6152);
 reg_write(   DDR_REG_BASE + 0x20010*4+0x02000000,0x5a);
 reg_write(   DDR_REG_BASE + 0x20011*4+0x02000000,0x3);
 
+
 reg_write(   DDR_REG_BASE + 0x40080*4+0x02000000,0xb0);
 //iteration
-reg_write(   DDR_REG_BASE + 0x40081*4+0x02000000,0x18);
+reg_write(   DDR_REG_BASE + 0x40081*4+0x02000000,0x0);
+//reg_write(   DDR_REG_BASE + 0x40081*4+0x02000000,0x14);
 reg_write(   DDR_REG_BASE + 0x40082*4+0x02000000,0x10);
 reg_write(   DDR_REG_BASE + 0x40083*4+0x02000000,0x20c);
 reg_write(   DDR_REG_BASE + 0x40084*4+0x02000000,0x20);
-reg_write(   DDR_REG_BASE + 0x40085*4+0x02000000,0x18);
+reg_write(   DDR_REG_BASE + 0x40085*4+0x02000000,0x70);
 reg_write(   DDR_REG_BASE + 0x40086*4+0x02000000,0x30);
 //iteration
+reg_write(   DDR_REG_BASE + 0x40087*4+0x02000000,0x8);
 //reg_write(   DDR_REG_BASE + 0x40087*4+0x02000000,0x10);
-reg_write(   DDR_REG_BASE + 0x40087*4+0x02000000,0x10);
-
 reg_write(   DDR_REG_BASE + 0x400fd*4+0x02000000,0xf);
 reg_write(   DDR_REG_BASE + 0x10011*4+0x02000000,0x1);
 reg_write(   DDR_REG_BASE + 0x10012*4+0x02000000,0x1);
@@ -18392,6 +18450,7 @@ reg_write(   DDR_REG_BASE + 0x20089*4+0x02000000,0x1);
 reg_write(   DDR_REG_BASE + 0x20088*4+0x02000000,0x19);
 reg_write(   DDR_REG_BASE + 0xc0080*4+0x02000000,0x2);
 reg_write(   DDR_REG_BASE + 0xd0000*4+0x02000000,0x1);
+
 reg_write(   DDR_REG_BASE +  0x000d0000*4 +0x02000000 , 0x00000000 );
 reg_read (   DDR_REG_BASE +  0x00020010*4 +0x02000000 , data );
 reg_write(   DDR_REG_BASE +  0x00020010*4 +0x02000000 , 0x0000006a );
@@ -18400,14 +18459,16 @@ reg_read (   DDR_REG_BASE +  0x0002001d*4 +0x02000000 , data );
 reg_write(   DDR_REG_BASE +  0x0002001d*4 +0x02000000 , 0x00000001 );
 reg_read (   DDR_REG_BASE +  0x00020097*4 +0x02000000 , data );
 
-//////////////////////phy init end////////////////////
+/////////////////////////phy init end////////////////////////////////////
 
 reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000020 );
 
+
 reg_read (DDR_REG_BASE +  0x000001bc  , data );
-while((data&0x1) !=0x1) {
+while((data&0x1) !=0x1){
  reg_read (DDR_REG_BASE +  0x000001bc  , data );
 }
+
 
 reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000000 );
 reg_write( DDR_REG_BASE + 0x000001b0 , 0x00000001 );
@@ -18418,12 +18479,12 @@ reg_write( DDR_REG_BASE + 0x00000320 , 0x00000001 );
 
 
  reg_read (DDR_REG_BASE +  0x00000324  , data );
- while((data&0x1) !=0x1) {
+ while((data&0x1) !=0x1){
  reg_read (DDR_REG_BASE +  0x00000324  , data );
  }
 
 reg_read (DDR_REG_BASE +  0x00000004  , data );
- while((data&0x1) !=0x1) {
+ while((data&0x1) !=0x1){
  reg_read (DDR_REG_BASE +  0x00000004  , data );
  }
 
@@ -18436,11 +18497,10 @@ reg_write( DDR_REG_BASE + 0x000000d0 , 0x00020002 );
 reg_write( DDR_REG_BASE + 0x00000320 , 0x00000001 );
 
 
-reg_read (DDR_REG_BASE +  0x00000324  , data );
- while((data&0x1) !=0x1) {
+ reg_read (DDR_REG_BASE +  0x00000324  , data );
+ while((data&0x1) !=0x1){
  reg_read (DDR_REG_BASE +  0x00000324  , data );
  }
-
 
 
 
@@ -18455,5 +18515,4 @@ reg_write( DDR_REG_BASE + 0x00000750 , 0x00000001 );
 
 reg_write( DDR_REG_BASE + 0x00000060 , 0x00000000 );
 reg_write( DDR_REG_BASE + 0x00000050 , 0x98210000 );
-
 }
