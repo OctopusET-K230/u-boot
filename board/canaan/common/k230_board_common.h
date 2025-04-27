@@ -111,6 +111,7 @@ typedef enum _en___boot_type{
 
 #define IMG_PART_NOT_EXIT 0XFFFFFFFF
 
+int ddr_init_training(void);
 
 void cache_flush(void);
 void record_boot_time_info_to_sram(char *prompt);
