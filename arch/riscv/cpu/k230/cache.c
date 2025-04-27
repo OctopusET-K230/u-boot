@@ -93,13 +93,13 @@ __ALWAYS_STATIC_INLINE uint64_t __get_MHCR(void)
 {
     uint64_t result;
 
-    __ASM volatile("csrr %0, mhcr" : "=r"(result));
+    __ASM volatile("csrr %0, %1" : "=r"(result) : "i"(CSR_MHCR));
     return (result);
 }
 
 __ALWAYS_STATIC_INLINE void __set_MHCR(uint64_t mhcr)
 {
-    __ASM volatile("csrw mhcr, %0" : : "r"(mhcr));
+    __ASM volatile("csrw %0, %1" : : "i"(CSR_MHCR), "r"(mhcr));
 }
 /**
   \brief   Instruction Synchronization Barrier
