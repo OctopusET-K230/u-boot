@@ -103,14 +103,14 @@ static unsigned int single_read(struct udevice *dev, fdt_addr_t reg)
 
 	switch (pdata->width) {
 	case 8:
-		return readb(reg);
+		return readb((const volatile void *)reg);
 	case 16:
-		return readw(reg);
+		return readw((const volatile void *)reg);
 	default: /* 32 bits */
-		return readl(reg);
+		return readl((volatile void *)reg);
 	}
 
-	return readb(reg);
+	return readb((const volatile void *)reg);
 }
 
 static void single_write(struct udevice *dev, unsigned int val, fdt_addr_t reg)
@@ -119,13 +119,13 @@ static void single_write(struct udevice *dev, unsigned int val, fdt_addr_t reg)
 
 	switch (pdata->width) {
 	case 8:
-		writeb(val, reg);
+		writeb(val, (volatile void *)reg);
 		break;
 	case 16:
-		writew(val, reg);
+		writew(val, (volatile void *)reg);
 		break;
 	default: /* 32 bits */
-		writel(val, reg);
+		writel(val, (volatile void *)reg);
 	}
 }
 

@@ -62,19 +62,19 @@
 void pd_pll(uint32_t pll_ctl,uint32_t pll_stat)
 {
 int rdata;
-   writel(0x10001,pll_ctl);
-   rdata=readl(pll_stat);
+   writel(0x10001, (volatile void *)pll_ctl);
+   rdata=readl((volatile void *)pll_stat);
    while( (rdata&0x30) != 0x0){
-        rdata=readl(pll_stat);
+        rdata=readl((volatile void *)pll_stat);
    }
 }
 void init_pll(uint32_t pll_ctl,uint32_t pll_stat)
 {
    int rdata;
-   writel(0x20002,pll_ctl);
-   rdata=readl(pll_stat);
+   writel(0x20002, (volatile void *)pll_ctl);
+   rdata=readl((volatile void *)pll_stat);
    while( (rdata & 0x30) != 0x20){
-        rdata=readl(pll_stat);
+        rdata=readl((volatile void *)pll_stat);
    }
 }
 
@@ -83,9 +83,9 @@ uint32_t cfg_pll(int fb_div,int ref_div,int out_div,int pllx_cfg0,int pllx_cfg1,
   int pll_sta;
   int wdata,rdata;
   pd_pll(pllx_ctl,pllx_stat);
-  //writel(( (fb_div/2) | 0x20000),pllx_cfg1 );
-  writel(( (fb_div/4) | 0x20000),pllx_cfg1 ); //for minimum long term jitter
-  writel(( (fb_div & 0x1fff) | ( (ref_div & 0x3f) << 16 ) | ( (out_div & 0xf) << 24) ),pllx_cfg0 );
+  //writel(( (fb_div/2) | 0x20000), (volatile void *)pllx_cfg1 );
+  writel(( (fb_div/4) | 0x20000), (volatile void *)pllx_cfg1 ); //for minimum long term jitter
+  writel(( (fb_div & 0x1fff) | ( (ref_div & 0x3f) << 16 ) | ( (out_div & 0xf) << 24) ), (volatile void *)pllx_cfg0 );
   init_pll(pllx_ctl,pllx_stat);
 
 }
@@ -17992,17 +17992,17 @@ while((train_data&0x7) !=0x07) {
   {
     unsigned long add,i=0;
     printf("%08X: PMU Major Msg: Firmware run has completed                                    \n",train_data);
-        // add = DDR_REG_BASE +0x5401b*4+0x02000000; printf("MR12-CA add =%lx value =%lx\n",add,readl(add));
-        // add = DDR_REG_BASE +0x5401c*4+0x02000000; printf("MR14-DQ add =%lx value =%lx\n",add,readl(add));
+        // add = DDR_REG_BASE +0x5401b*4+0x02000000; printf("MR12-CA add =%lx value =%lx\n",add,readl((volatile void *)add));
+        // add = DDR_REG_BASE +0x5401c*4+0x02000000; printf("MR14-DQ add =%lx value =%lx\n",add,readl((volatile void *)add));
         // for(i=0;i<8;i++)
-        // {add = DDR_REG_BASE +  0x00010040*4+0x02000000+i*0x100; printf("dbyte0 add =%lx value =%lx\n",add,readl(add));}
-        // //add = DDR_REG_BASE +  0x00010140*4+0x02000000; printf("add =%lx value =%lx\n",add,readl(add));
+        // {add = DDR_REG_BASE +  0x00010040*4+0x02000000+i*0x100; printf("dbyte0 add =%lx value =%lx\n",add,readl((volatile void *)add));}
+        // //add = DDR_REG_BASE +  0x00010140*4+0x02000000; printf("add =%lx value =%lx\n",add,readl((volatile void *)add));
         // for(i=0;i<8;i++)
-        // {add = DDR_REG_BASE +  0x00011140*4+0x02000000+i*0x100; printf("dbyte1 add =%lx value =%lx\n",add,readl(add));}
+        // {add = DDR_REG_BASE +  0x00011140*4+0x02000000+i*0x100; printf("dbyte1 add =%lx value =%lx\n",add,readl((volatile void *)add));}
         // for(i=0;i<8;i++)
-        // {add = DDR_REG_BASE +  0x00012140*4+0x02000000+i*0x100; printf("dbyte2 add =%lx value =%lx\n",add,readl(add));}
+        // {add = DDR_REG_BASE +  0x00012140*4+0x02000000+i*0x100; printf("dbyte2 add =%lx value =%lx\n",add,readl((volatile void *)add));}
         // for(i=0;i<8;i++)
-        // {add = DDR_REG_BASE +  0x00013140*4+0x02000000+i*0x100; printf("dbyte3 add =%lx value =%lx\n",add,readl(add));  }
+        // {add = DDR_REG_BASE +  0x00013140*4+0x02000000+i*0x100; printf("dbyte3 add =%lx value =%lx\n",add,readl((volatile void *)add));  }
   }
   break;
   case 0x00000008: printf("%08X: PMU Major Msg: Enter streaming message mode                                  \n",train_data);break;
@@ -18669,17 +18669,17 @@ reg_write( DDR_REG_BASE +  0x0000050 , 0x98210000 );
 
     // {
     //     unsigned long add,i;
-    //     add = DDR_REG_BASE +0x5401b*4+0x02000000; printf("MR12-CA add =%lx value =%lx\n",add,readl(add));
-    //     add = DDR_REG_BASE +0x5401c*4+0x02000000; printf("MR14-DQ add =%lx value =%lx\n",add,readl(add));
+    //     add = DDR_REG_BASE +0x5401b*4+0x02000000; printf("MR12-CA add =%lx value =%lx\n",add,readl((volatile void *)add));
+    //     add = DDR_REG_BASE +0x5401c*4+0x02000000; printf("MR14-DQ add =%lx value =%lx\n",add,readl((volatile void *)add));
 
     //     for(i=0;i<8;i++)
-    //     {add = DDR_REG_BASE +  0x00010040*4+0x02000000+i*0x100*4; printf("dbyte0 add =%lx value =%lx\n",add,readl(add));}
+    //     {add = DDR_REG_BASE +  0x00010040*4+0x02000000+i*0x100*4; printf("dbyte0 add =%lx value =%lx\n",add,readl((volatile void *)add));}
     //     for(i=0;i<8;i++)
-    //     {add = DDR_REG_BASE +  0x00011040*4+0x02000000+i*0x100*4; printf("dbyte1 add =%lx value =%lx\n",add,readl(add));}
+    //     {add = DDR_REG_BASE +  0x00011040*4+0x02000000+i*0x100*4; printf("dbyte1 add =%lx value =%lx\n",add,readl((volatile void *)add));}
     //     for(i=0;i<8;i++)
-    //     {add = DDR_REG_BASE +  0x00012040*4+0x02000000+i*0x100*4; printf("dbyte2 add =%lx value =%lx\n",add,readl(add));}
+    //     {add = DDR_REG_BASE +  0x00012040*4+0x02000000+i*0x100*4; printf("dbyte2 add =%lx value =%lx\n",add,readl((volatile void *)add));}
     //     for(i=0;i<8;i++)
-    //     {add = DDR_REG_BASE +  0x00013040*4+0x02000000+i*0x100*4; printf("dbyte3 add =%lx value =%lx\n",add,readl(add)); }
+    //     {add = DDR_REG_BASE +  0x00013040*4+0x02000000+i*0x100*4; printf("dbyte3 add =%lx value =%lx\n",add,readl((volatile void *)add)); }
     // }
 
 

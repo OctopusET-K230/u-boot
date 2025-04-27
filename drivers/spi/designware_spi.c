@@ -1054,18 +1054,18 @@ static int dw_spi_exec_op(struct spi_slave *slave, const struct spi_mem_op *op)
 		if (read)
 		{
 			axiawlen.axiawlen.awlen = axi_len;
-			dw_write(priv, DW_SPI_AXIAWLEN, axiawlen.data);
-			flush_dcache_range(buffer, buffer + op->data.nbytes);
-			invalidate_dcache_range(buffer, buffer + op->data.nbytes);
+			dw_write(priv, DW_SPI_AXIAWLEN, (u32)(uintptr_t)axiawlen.data);
+			flush_dcache_range((unsigned long)buffer, (unsigned long)buffer + op->data.nbytes);
+			invalidate_dcache_range((unsigned long)buffer, (unsigned long)buffer + op->data.nbytes);
 		}
 		else
 		{
 			axiarlen.axiarlen.arlen = axi_len;
-			dw_write(priv, DW_SPI_AXIARLEN, axiarlen.data);
-			flush_dcache_range(buffer, buffer + op->data.nbytes);
+			dw_write(priv, DW_SPI_AXIARLEN, (u32)(uintptr_t)axiarlen.data);
+			flush_dcache_range((unsigned long)buffer, (unsigned long)buffer + op->data.nbytes);
 		}
 
-		dw_write(priv, DW_SPI_AXIAR0, buffer);
+		dw_write(priv, DW_SPI_AXIAR0, (u32)(uintptr_t)buffer);
 	}
 
 	external_cs_manage(slave->dev, false);
